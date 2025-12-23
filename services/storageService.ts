@@ -1,0 +1,151 @@
+
+import { Student, Submission, SubmissionStatus, TaskType, PracticeTask, UserRole } from "../types";
+
+// Для деплоя замените localhost на IP вашего сервера
+const API_BASE = "http://localhost:3002/api"; 
+const SESSION_KEY = "pe_bot_session";
+
+const normalizeName = (name: string): string => {
+    return name.trim().toLowerCase().replace(/\s+/g, ' ');
+};
+
+export const getStudents = async (): Promise<Student[]> => {
+    try {
+        const res = await fetch(`${API_BASE}/students`);
+        return await res.json();
+    } catch (e) {
+        console.error("Ошибка сети", e);
+        return [];
+    }
+};
+
+export const getStudentById = async (id: string): Promise<Student | undefined> => {
+    const students = await getStudents();
+    return students.find(s => s.id === id);
+}
+
+export const registerNewStudent = async (fullName: string, groupNumber: string, password: string): Promise<Student> => {
+  const students = await getStudents();
+  const normalizedInputName = normalizeName(fullName);
+
+  if (students.find(s => normalizeName(s.fullName) === normalizedInputName)) {
+      throw new Error("Студент с таким именем уже зарегистрирован.");
+  }
+
+  const newStudent: Student = {
+    id: Date.now().toString(),
+    fullName: fullName.trim().replace(/\s+/g, ' '), 
+    groupNumber: groupNumber.trim(),
+    password: password, 
+    missedClasses: 10,
+    classesMadeUp: 0,
+    permissions: { canDoTheory: true, canDoPractice: true }
+  };
+
+  await fetch(`${API_BASE}/students`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newStudent)
+  });
+
+  saveSession(UserRole.STUDENT, newStudent.id);
+  return newStudent;
+};
+
+export const loginStudent = async (fullName: string, password: string): Promise<Student> => {
+    const students = await getStudents();
+    const normalizedInputName = normalizeName(fullName);
+    
+    const student = students.find(s => normalizeName(s.fullName) === normalizedInputName);
+
+    if (!student) {
+        throw new Error("Студент не найден.");
+    }
+
+    if (student.password && student.password !== password) {
+        throw new Error("Неверный пароль.");
+    }
+    
+    saveSession(UserRole.STUDENT, student.id);
+    return student;
+}
+
+export const updateStudent = async (id: string, updates: Partial<Student>) => {
+    const student = await getStudentById(id);
+    if (student) {
+        await fetch(`${API_BASE}/students`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...student, ...updates })
+        });
+    }
+}
+
+export const saveSession = (role: UserRole, studentId?: string) => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ role, studentId }));
+}
+
+export const getSession = () => {
+    const data = localStorage.getItem(SESSION_KEY);
+    return data ? JSON.parse(data) : null;
+}
+
+export const clearSession = () => localStorage.removeItem(SESSION_KEY);
+
+export const getSubmissions = async (): Promise<Submission[]> => {
+    try {
+        const res = await fetch(`${API_BASE}/submissions`);
+        return await res.json();
+    } catch (e) {
+        return [];
+    }
+};
+
+export const submitTheoryResult = async (studentId: string, score: number, total: number): Promise<boolean> => {
+  const isPassed = (score / total) >= 0.6;
+  
+  const sub: Submission = {
+    id: Date.now().toString(),
+    studentId,
+    type: TaskType.THEORY,
+    status: isPassed ? SubmissionStatus.APPROVED : SubmissionStatus.REJECTED,
+    timestamp: Date.now(),
+    quizScore: score,
+    totalQuestions: total
+  };
+
+  await fetch(`${API_BASE}/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submission: sub })
+  });
+
+  return isPassed;
+};
+
+export const submitPracticeVideo = async (studentId: string, task: PracticeTask, videoBase64: string) => {
+  const sub: Submission = {
+    id: Date.now().toString(),
+    studentId,
+    type: TaskType.PRACTICE,
+    status: SubmissionStatus.PENDING,
+    timestamp: Date.now(),
+    taskDetails: task
+  };
+
+  const res = await fetch(`${API_BASE}/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submission: sub, videoBase64 })
+  });
+  
+  if (!res.ok) throw new Error("Ошибка загрузки видео на сервер");
+};
+
+export const updateSubmissionStatus = async (id: string, status: SubmissionStatus) => {
+    await fetch(`${API_BASE}/submissions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+    });
+}

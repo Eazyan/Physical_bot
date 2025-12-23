@@ -1,0 +1,8 @@
+{
+  "name": "Бот Отработки Физкультуры",
+  "description": "Приложение для управления отработками пропусков по физкультуре.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
