@@ -2,7 +2,7 @@
 import { Student, Submission, SubmissionStatus, TaskType, PracticeTask, UserRole } from "../types";
 
 // Для деплоя замените localhost на IP вашего сервера
-const API_BASE = "http://localhost:3002/api"; 
+const API_BASE = "http://82.162.60.97:3002/api"; 
 const SESSION_KEY = "pe_bot_session";
 
 const normalizeName = (name: string): string => {

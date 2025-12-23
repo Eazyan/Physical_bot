@@ -1,29 +1,48 @@
 
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+import express from 'express';
+import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3002;
-const DB_FILE = './db.json';
-const UPLOADS_DIR = './uploads';
+const DB_FILE = path.join(__dirname, 'db.json');
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
 
 // Создаем папку для видео и файл БД, если их нет
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
+if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 if (!fs.existsSync(DB_FILE)) {
     fs.writeFileSync(DB_FILE, JSON.stringify({ students: [], submissions: [] }, null, 2));
 }
 
 app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' }));
+// Увеличиваем лимит для приема видео в base64
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+// Раздача статических файлов (видео)
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Чтение БД
-const readDB = () => JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+const readDB = () => {
+    try {
+        const data = fs.readFileSync(DB_FILE, 'utf8');
+        return JSON.parse(data);
+    } catch (e) {
+        return { students: [], submissions: [] };
+    }
+};
+
 // Запись в БД
-const writeDB = (data) => fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+const writeDB = (data) => {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+};
 
 // API: Получить всех студентов
 app.get('/api/students', (req, res) => {
@@ -59,12 +78,18 @@ app.post('/api/submissions', (req, res) => {
     let finalSub = { ...submission };
 
     if (videoBase64) {
-        const fileName = `video_${Date.now()}.mp4`;
-        const filePath = path.join(UPLOADS_DIR, fileName);
-        const base64Data = videoBase64.replace(/^data:video\/\w+;base64,/, "");
-        fs.writeFileSync(filePath, base64Data, 'base64');
-        finalSub.videoUrl = `http://localhost:${PORT}/uploads/${fileName}`; 
-        // Примечание: В продакшене лучше заменить localhost на ваш IP/домен
+        try {
+            const fileName = `video_${Date.now()}.mp4`;
+            const filePath = path.join(UPLOADS_DIR, fileName);
+            const base64Data = videoBase64.replace(/^data:video\/\w+;base64,/, "");
+            fs.writeFileSync(filePath, base64Data, 'base64');
+            
+            // ВАЖНО: При деплое замените localhost на ваш внешний IP сервера
+            finalSub.videoUrl = `http://localhost:${PORT}/uploads/${fileName}`;
+        } catch (error) {
+            console.error('Ошибка при сохранении видео:', error);
+            return res.status(500).json({ error: 'Failed to save video file' });
+        }
     }
 
     db.submissions.unshift(finalSub);
@@ -81,7 +106,6 @@ app.patch('/api/submissions/:id', (req, res) => {
     const sub = db.submissions.find(s => s.id === id);
     if (sub) {
         sub.status = status;
-        // Если одобрено, обновляем счетчик у студента
         if (status === 'APPROVED') {
             const student = db.students.find(s => s.id === sub.studentId);
             if (student) {
@@ -91,12 +115,13 @@ app.patch('/api/submissions/:id', (req, res) => {
         writeDB(db);
         res.json({ success: true });
     } else {
-        res.status(404).json({ error: 'Not found' });
+        res.status(404).json({ error: 'Submission not found' });
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`🚀 Сервер запущен на http://localhost:${PORT}`);
-    console.log(`📁 Видео сохраняются в: ${path.resolve(UPLOADS_DIR)}`);
-    console.log(`📝 База данных: ${path.resolve(DB_FILE)}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🚀 Сервер Физкульт-Бота запущен!`);
+    console.log(`📡 API доступно по адресу: http://ваш-ip:${PORT}/api`);
+    console.log(`📂 Папка с видео: ${UPLOADS_DIR}`);
+    console.log(`📝 Файл базы данных: ${DB_FILE}\n`);
 });
