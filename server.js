@@ -87,10 +87,36 @@ app.patch('/api/submissions/:id', (req, res) => {
 // 1. Сначала раздаем API и загруженные файлы
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// 2. Раздаем статику из папки dist (собранный React проект)
+// 2. Middleware для обработки запросов с префиксом /phys-app
+// Когда Apache проксирует /phys-app/... на http://localhost:3002/phys-app/...,
+// мы убираем префикс /phys-app перед обработкой статики
+app.use('/phys-app', (req, res, next) => {
+    // Временно сохраняем оригинальный URL
+    const originalUrl = req.originalUrl || req.url;
+    // Убираем префикс /phys-app из req.url для правильной обработки статики
+    if (req.url.startsWith('/phys-app')) {
+        req.url = req.url.replace(/^\/phys-app/, '') || '/';
+    }
+    next();
+});
+
+// 3. Раздаем статику из папки dist (собранный React проект)
+// После middleware префикс /phys-app уже убран из req.url
+app.use('/phys-app', express.static(path.join(__dirname, 'dist')));
+
+// Также поддерживаем запросы без префикса (для прямого доступа)
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// 3. Любой другой запрос перенаправляем на index.html (для SPA роутинга)
+// 4. Любой другой запрос перенаправляем на index.html (для SPA роутинга)
+app.get('/phys-app*', (req, res) => {
+    const indexPath = path.join(__dirname, 'dist', 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).send('Приложение еще не собрано. Выполните npm run build');
+    }
+});
+
 app.get('*', (req, res) => {
     const indexPath = path.join(__dirname, 'dist', 'index.html');
     if (fs.existsSync(indexPath)) {
