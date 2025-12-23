@@ -1,8 +1,15 @@
 
 import { Student, Submission, SubmissionStatus, TaskType, PracticeTask, UserRole } from "../types";
 
-// Для деплоя замените localhost на IP вашего сервера
-const API_BASE = "http://82.162.60.97:3002/api"; 
+// Автоматически определяем адрес API. Если сайт открыт на 1.2.3.4, API будет на 1.2.3.4:3002
+const getApiBase = () => {
+    const hostname = window.location.hostname;
+    // Если мы в разработке на localhost, используем 3002
+    return `http://${hostname}:3002`;
+};
+
+const API_BASE = `${getApiBase()}/api`;
+const UPLOADS_BASE = getApiBase();
 const SESSION_KEY = "pe_bot_session";
 
 const normalizeName = (name: string): string => {
@@ -12,9 +19,10 @@ const normalizeName = (name: string): string => {
 export const getStudents = async (): Promise<Student[]> => {
     try {
         const res = await fetch(`${API_BASE}/students`);
+        if (!res.ok) return [];
         return await res.json();
     } catch (e) {
-        console.error("Ошибка сети", e);
+        console.error("API unreachable");
         return [];
     }
 };
@@ -55,16 +63,10 @@ export const registerNewStudent = async (fullName: string, groupNumber: string, 
 export const loginStudent = async (fullName: string, password: string): Promise<Student> => {
     const students = await getStudents();
     const normalizedInputName = normalizeName(fullName);
-    
     const student = students.find(s => normalizeName(s.fullName) === normalizedInputName);
 
-    if (!student) {
-        throw new Error("Студент не найден.");
-    }
-
-    if (student.password && student.password !== password) {
-        throw new Error("Неверный пароль.");
-    }
+    if (!student) throw new Error("Студент не найден.");
+    if (student.password && student.password !== password) throw new Error("Неверный пароль.");
     
     saveSession(UserRole.STUDENT, student.id);
     return student;
@@ -95,7 +97,12 @@ export const clearSession = () => localStorage.removeItem(SESSION_KEY);
 export const getSubmissions = async (): Promise<Submission[]> => {
     try {
         const res = await fetch(`${API_BASE}/submissions`);
-        return await res.json();
+        const subs: Submission[] = await res.json();
+        // Превращаем относительные пути в абсолютные для корректного отображения
+        return subs.map(sub => ({
+            ...sub,
+            videoUrl: sub.videoUrl ? `${UPLOADS_BASE}${sub.videoUrl}` : undefined
+        }));
     } catch (e) {
         return [];
     }
@@ -103,7 +110,6 @@ export const getSubmissions = async (): Promise<Submission[]> => {
 
 export const submitTheoryResult = async (studentId: string, score: number, total: number): Promise<boolean> => {
   const isPassed = (score / total) >= 0.6;
-  
   const sub: Submission = {
     id: Date.now().toString(),
     studentId,
@@ -139,7 +145,7 @@ export const submitPracticeVideo = async (studentId: string, task: PracticeTask,
       body: JSON.stringify({ submission: sub, videoBase64 })
   });
   
-  if (!res.ok) throw new Error("Ошибка загрузки видео на сервер");
+  if (!res.ok) throw new Error("Ошибка загрузки");
 };
 
 export const updateSubmissionStatus = async (id: string, status: SubmissionStatus) => {
