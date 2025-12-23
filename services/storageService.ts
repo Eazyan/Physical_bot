@@ -1,15 +1,11 @@
 
 import { Student, Submission, SubmissionStatus, TaskType, PracticeTask, UserRole } from "../types";
 
-// Автоматически определяем адрес API. Если сайт открыт на 1.2.3.4, API будет на 1.2.3.4:3002
-const getApiBase = () => {
-    const hostname = window.location.hostname;
-    // Если мы в разработке на localhost, используем 3002
-    return `http://${hostname}:3002`;
-};
-
-const API_BASE = `${getApiBase()}/api`;
-const UPLOADS_BASE = getApiBase();
+// ИСПОЛЬЗУЕМ ОТНОСИТЕЛЬНЫЕ ПУТИ
+// Браузер сам поймет, что нужно обращаться к тому же серверу, откуда загрузился сайт.
+// Это решает проблему с IP адресами и портами.
+const API_BASE = '/api';
+const UPLOADS_BASE = ''; // Пути к файлам уже будут относительными (напр. /uploads/video.mp4)
 const SESSION_KEY = "pe_bot_session";
 
 const normalizeName = (name: string): string => {
@@ -98,11 +94,8 @@ export const getSubmissions = async (): Promise<Submission[]> => {
     try {
         const res = await fetch(`${API_BASE}/submissions`);
         const subs: Submission[] = await res.json();
-        // Превращаем относительные пути в абсолютные для корректного отображения
-        return subs.map(sub => ({
-            ...sub,
-            videoUrl: sub.videoUrl ? `${UPLOADS_BASE}${sub.videoUrl}` : undefined
-        }));
+        // Просто возвращаем как есть, так как пути уже относительные (/uploads/...)
+        return subs;
     } catch (e) {
         return [];
     }
