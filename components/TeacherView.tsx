@@ -15,6 +15,7 @@ export default function TeacherView({ onLogout }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [viewingVideoUrl, setViewingVideoUrl] = useState<string | null>(null);
+  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
 
   const refreshData = async () => {
       const [sList, subList] = await Promise.all([getStudents(), getSubmissions()]);
@@ -168,9 +169,9 @@ export default function TeacherView({ onLogout }: Props) {
                             <div className="text-sm font-bold text-gray-800 mb-2">{sub.taskDetails?.title}</div>
                             
                             {sub.taskDetails?.imageUrl && (
-                                <div className="mb-4 rounded-lg overflow-hidden border">
-                                    <div className="bg-gray-100 px-3 py-1 text-[10px] font-bold text-gray-500 uppercase">Карточка задания</div>
-                                    <img src={sub.taskDetails.imageUrl} alt="Задание" className="w-full h-auto max-h-48 object-contain bg-white" />
+                                <div className="mb-4 rounded-lg overflow-hidden border cursor-zoom-in" onClick={() => setViewingImageUrl(sub.taskDetails?.imageUrl || null)}>
+                                    <div className="bg-gray-100 px-3 py-1 text-[10px] font-bold text-gray-500 uppercase">Карточка задания (нажми, чтобы увеличить)</div>
+                                    <img src={sub.taskDetails.imageUrl} alt="Задание" className="w-full h-auto max-h-48 object-contain bg-white hover:opacity-90 transition-opacity" />
                                 </div>
                             )}
 
@@ -242,6 +243,32 @@ export default function TeacherView({ onLogout }: Props) {
               </div>
           </div>
       )}
+
+      {viewingImageUrl && (
+          <div className="fixed inset-0 z-[120] bg-black/90 flex flex-col items-center justify-center p-4 sm:p-8" onClick={() => setViewingImageUrl(null)}>
+              <button 
+                  onClick={() => setViewingImageUrl(null)} 
+                  className="absolute top-4 right-4 z-[130] p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
+                  title="Закрыть"
+              >
+                  <X size={32} />
+              </button>
+              <div className="w-full max-w-5xl h-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                  <img 
+                    src={viewingImageUrl} 
+                    alt="Задание полноэкранный режим" 
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                  />
+              </div>
+              <button 
+                onClick={() => setViewingImageUrl(null)}
+                className="mt-4 bg-white/10 hover:bg-white/20 text-white px-8 py-3 rounded-xl transition-all border border-white/20 font-bold"
+              >
+                Закрыть
+              </button>
+          </div>
+      )}
+
       {selectedStudentId && <StudentDetailView studentId={selectedStudentId} />}
     </div>
   );
