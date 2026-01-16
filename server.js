@@ -77,6 +77,15 @@ const handleApiSubmissions = {
         }
 
         db.submissions.unshift(finalSub);
+        
+        // Если это тест и он пройден успешно - сразу увеличиваем счетчик у студента
+        if (finalSub.type === 'THEORY' && finalSub.status === 'APPROVED') {
+            const student = db.students.find(s => s.id === finalSub.studentId);
+            if (student) {
+                student.classesMadeUp = (student.classesMadeUp || 0) + 1;
+            }
+        }
+
         writeDB(db);
         res.json({ success: true, submission: finalSub });
     }
