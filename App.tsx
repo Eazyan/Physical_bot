@@ -76,8 +76,8 @@ export default function App() {
             <div className="bg-emerald-500 w-16 h-16 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/20">
               <ShieldCheck size={32} className="text-white" />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight">Физкультура Бот</h1>
-            <p className="text-slate-400">Кафедра Физического Воспитания</p>
+            <h1 className="text-3xl font-bold tracking-tight">Бот для отработки долгов</h1>
+            <p className="text-slate-400">Тренажёрный зал ДВФУ</p>
           </div>
 
           <div className="space-y-4">
