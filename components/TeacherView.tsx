@@ -206,10 +206,39 @@ export default function TeacherView({ onLogout }: Props) {
       </main>
 
       {viewingVideoUrl && (
-          <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4" onClick={() => setViewingVideoUrl(null)}>
-              <div className="w-full max-w-3xl relative" onClick={e => e.stopPropagation()}>
-                  <video src={viewingVideoUrl} controls autoPlay className="w-full rounded-lg" />
-                  <a href={viewingVideoUrl} download className="mt-4 block text-center text-white underline">Скачать видео</a>
+          <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-4" onClick={() => setViewingVideoUrl(null)}>
+              <button 
+                  onClick={() => setViewingVideoUrl(null)} 
+                  className="absolute top-4 right-4 z-[110] p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
+                  title="Закрыть"
+              >
+                  <X size={32} />
+              </button>
+              
+              <div className="w-full max-w-3xl flex flex-col items-center gap-4" onClick={e => e.stopPropagation()}>
+                  <div className="w-full bg-black rounded-lg shadow-2xl overflow-hidden border border-white/10">
+                      <video 
+                          src={viewingVideoUrl} 
+                          controls 
+                          autoPlay 
+                          className="w-full h-auto max-h-[75vh]" 
+                      />
+                  </div>
+                  <div className="flex gap-4">
+                        <a 
+                            href={viewingVideoUrl} 
+                            download 
+                            className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl flex items-center gap-2 transition-all border border-white/20"
+                        >
+                            <Download size={20} /> Скачать видео
+                        </a>
+                        <button 
+                            onClick={() => setViewingVideoUrl(null)}
+                            className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl transition-all border border-white/20"
+                        >
+                            Закрыть
+                        </button>
+                  </div>
               </div>
           </div>
       )}
