@@ -30,7 +30,7 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
 
   const [practiceTask, setPracticeTask] = useState<PracticeTask | null>(null);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoFiles, setVideoFiles] = useState<File[]>([]);
   const [practiceLoading, setPracticeLoading] = useState(false);
 
   useEffect(() => {
@@ -144,7 +144,7 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
     if (!student?.permissions?.canDoPractice) return;
     setPracticeLoading(true);
     setView('PRACTICE');
-    setVideoFile(null);
+    setVideoFiles([]);
     try {
       const task = await generatePracticeTask();
       setPracticeTask(task);
@@ -157,29 +157,42 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
   };
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setVideoFile(e.target.files[0]);
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      const maxSize = 1000 * 1024 * 1024 * 1.5; // 1.5GB in bytes
+      const totalSize = [...videoFiles, ...newFiles].reduce((acc, f) => acc + f.size, 0);
+      
+      if (totalSize > maxSize) {
+        alert("Общий размер видео превышает 1.5ГБ. Выберите файлы меньшего размера.");
+        return;
+      }
+      
+      setVideoFiles(prev => [...prev, ...newFiles]);
     }
   };
 
   const submitPractice = async () => {
-    if (!videoFile || !practiceTask) return;
+    if (videoFiles.length === 0 || !practiceTask) return;
     setLoading(true);
 
-    const reader = new FileReader();
-    reader.readAsDataURL(videoFile);
-    reader.onload = async () => {
-        try {
-            const base64Video = reader.result as string;
-            await submitPracticeVideo(student!.id, practiceTask, base64Video);
-            setLoading(false);
-            setView('DASHBOARD');
-            alert("Видео отправлено на сервер преподавателю!");
-        } catch (e: any) {
-            alert(e.message || "Ошибка загрузки.");
-            setLoading(false);
-        }
-    };
+    try {
+      const base64Videos = await Promise.all(
+        videoFiles.map(file => new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+        }))
+      );
+
+      await submitPracticeVideo(student!.id, practiceTask, "", base64Videos);
+      setLoading(false);
+      setView('DASHBOARD');
+      alert(`Загружено файлов: ${videoFiles.length}. Видео отправлены на проверку!`);
+    } catch (e: any) {
+      alert(e.message || "Ошибка загрузки.");
+      setLoading(false);
+    }
   };
 
   if (!student) {
@@ -323,12 +336,33 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
                     )}
                     <div className="font-bold text-emerald-600">Цель: {practiceTask?.durationOrReps}</div>
                 </div>
-                <label className="flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-2xl cursor-pointer bg-white mb-6">
-                    {videoFile ? <CheckCircle size={40} className="text-emerald-500" /> : <Upload size={40} className="text-gray-300" />}
-                    <span className="mt-2 text-gray-500">{videoFile ? videoFile.name : "Загрузить видео"}</span>
-                    <input type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
+                <label className="flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-2xl cursor-pointer bg-white mb-6 p-4 text-center">
+                    {videoFiles.length > 0 ? (
+                        <>
+                            <CheckCircle size={40} className="text-emerald-500 mb-2" />
+                            <div className="text-sm font-bold text-gray-700">Выбрано файлов: {videoFiles.length}</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                                {videoFiles.map(f => f.name).join(', ')}
+                            </div>
+                            <button 
+                                onClick={(e) => { e.preventDefault(); setVideoFiles([]); }}
+                                className="mt-4 text-rose-500 text-xs font-bold underline"
+                            >
+                                Очистить список
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <Upload size={40} className="text-gray-300 mb-2" />
+                            <span className="text-gray-500 font-medium">Загрузить видео (можно несколько)</span>
+                            <span className="text-xs text-gray-400 mt-1">Макс. общий размер: 1ГБ</span>
+                        </>
+                    )}
+                    <input type="file" accept="video/*" multiple className="hidden" onChange={handleVideoUpload} />
                 </label>
-                <button onClick={submitPractice} disabled={!videoFile || loading} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50">{loading ? <Loader2 className="animate-spin mx-auto" /> : "Отправить на проверку"}</button>
+                <button onClick={submitPractice} disabled={videoFiles.length === 0 || loading} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50">
+                    {loading ? <Loader2 className="animate-spin mx-auto" /> : `Отправить на проверку (${videoFiles.length})`}
+                </button>
           </div>
       );
   }

@@ -42,6 +42,7 @@ export interface Submission {
   // For Practice
   taskDetails?: PracticeTask;
   videoUrl?: string; // Simulated URL
+  videoUrls?: string[];
 }
 
 export interface StudentPermissions {

@@ -21,7 +21,7 @@ try {
 }
 
 app.use(cors());
-app.use(express.json({ limit: '100mb' }));
+app.use(express.json({ limit: '1500mb' }));
 
 // Логирование API запросов
 app.use((req, res, next) => {
@@ -52,15 +52,28 @@ const handleApiSubmissions = {
     get: (req, res) => res.json(readDB().submissions),
     post: (req, res) => {
         const db = readDB();
-        const { submission, videoBase64 } = req.body;
-        let finalSub = { ...submission };
+        const { submission, videoBase64, videosBase64 } = req.body;
+        let finalSub = { ...submission, videoUrls: [] };
 
+        // Обработка одного видео (совместимость)
         if (videoBase64) {
             const fileName = `video_${Date.now()}.mp4`;
             const filePath = path.join(UPLOADS_DIR, fileName);
             const base64Data = videoBase64.replace(/^data:video\/\w+;base64,/, "");
             fs.writeFileSync(filePath, base64Data, 'base64');
             finalSub.videoUrl = `/phys-app/uploads/${fileName}`;
+            finalSub.videoUrls.push(finalSub.videoUrl);
+        }
+
+        // Обработка массива видео
+        if (videosBase64 && Array.isArray(videosBase64)) {
+            videosBase64.forEach((vBase64, index) => {
+                const fileName = `video_${Date.now()}_${index}.mp4`;
+                const filePath = path.join(UPLOADS_DIR, fileName);
+                const base64Data = vBase64.replace(/^data:video\/\w+;base64,/, "");
+                fs.writeFileSync(filePath, base64Data, 'base64');
+                finalSub.videoUrls.push(`/phys-app/uploads/${fileName}`);
+            });
         }
 
         db.submissions.unshift(finalSub);
