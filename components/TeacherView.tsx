@@ -113,6 +113,15 @@ export default function TeacherView({ onLogout }: Props) {
                               </div>
                               <div>{sub.type === 'THEORY' ? `Результат: ${sub.quizScore}/${sub.totalQuestions}` : sub.taskDetails?.title}</div>
                               {sub.videoUrl && <button onClick={() => setViewingVideoUrl(sub.videoUrl!)} className="text-blue-600 flex items-center gap-1 mt-1"><Play size={12}/> Смотреть</button>}
+                              {sub.videoUrls && sub.videoUrls.length > 0 && (
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                      {sub.videoUrls.map((vUrl, idx) => (
+                                          <button key={idx} onClick={() => setViewingVideoUrl(vUrl)} className="text-blue-600 flex items-center gap-1 text-[10px] bg-blue-50 px-2 py-1 rounded-md">
+                                              <Play size={10}/> Видео {idx + 1}
+                                          </button>
+                                      ))}
+                                  </div>
+                              )}
                           </div>
                       ))}
                   </div>
@@ -156,8 +165,35 @@ export default function TeacherView({ onLogout }: Props) {
                     return (
                         <div key={sub.id} className="bg-white p-4 rounded-xl border">
                             <div className="font-bold mb-2">{student?.fullName} ({student?.groupNumber})</div>
-                            <div className="text-sm text-gray-600 mb-4">{sub.taskDetails?.title}</div>
-                            <button onClick={() => setViewingVideoUrl(sub.videoUrl || null)} className="w-full aspect-video bg-black rounded-lg flex items-center justify-center mb-4"><Play size={32} className="text-white"/></button>
+                            <div className="text-sm font-bold text-gray-800 mb-2">{sub.taskDetails?.title}</div>
+                            
+                            {sub.taskDetails?.imageUrl && (
+                                <div className="mb-4 rounded-lg overflow-hidden border">
+                                    <div className="bg-gray-100 px-3 py-1 text-[10px] font-bold text-gray-500 uppercase">Карточка задания</div>
+                                    <img src={sub.taskDetails.imageUrl} alt="Задание" className="w-full h-auto max-h-48 object-contain bg-white" />
+                                </div>
+                            )}
+
+                            <div className="space-y-2 mb-4">
+                                <div className="text-[10px] font-bold text-gray-500 uppercase">Видеоматериалы:</div>
+                                {sub.videoUrls && sub.videoUrls.length > 0 ? (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {sub.videoUrls.map((vUrl, idx) => (
+                                            <button 
+                                                key={idx} 
+                                                onClick={() => setViewingVideoUrl(vUrl)} 
+                                                className="aspect-video bg-black rounded-lg flex items-center justify-center relative overflow-hidden group"
+                                            >
+                                                <Play size={24} className="text-white z-10" />
+                                                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] p-1 text-center">Видео {idx + 1}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <button onClick={() => setViewingVideoUrl(sub.videoUrl || null)} className="w-full aspect-video bg-black rounded-lg flex items-center justify-center"><Play size={32} className="text-white"/></button>
+                                )}
+                            </div>
+
                             <div className="grid grid-cols-2 gap-3">
                                 <button onClick={async () => { await updateSubmissionStatus(sub.id, SubmissionStatus.REJECTED); refreshData(); }} className="py-2 border rounded-lg text-red-600 font-bold">Отклонить</button>
                                 <button onClick={async () => { await updateSubmissionStatus(sub.id, SubmissionStatus.APPROVED); refreshData(); }} className="py-2 bg-emerald-600 text-white rounded-lg font-bold">Принять</button>
