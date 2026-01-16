@@ -26,6 +26,8 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
   const [score, setScore] = useState(0);
   const [quizFinished, setQuizFinished] = useState(false);
   const [quizLoading, setQuizLoading] = useState(false);
+  const [showNote, setShowNote] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
 
   const [practiceTask, setPracticeTask] = useState<PracticeTask | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -95,9 +97,34 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
   };
 
   const handleAnswer = (optionIndex: number) => {
+    if (selectedOption !== null) return;
+    
     const isCorrect = optionIndex === quizQuestions[currentQuestionIndex].correctAnswerIndex;
-    if (isCorrect) setScore(s => s + 1);
+    setSelectedOption(optionIndex);
+    if (isCorrect) {
+      setScore(s => s + 1);
+      // Если правильно - сразу дальше через небольшую паузу
+      setTimeout(() => {
+        setSelectedOption(null);
+        if (currentQuestionIndex + 1 < quizQuestions.length) {
+          setCurrentQuestionIndex(prev => prev + 1);
+        } else {
+          finishQuiz(score + 1);
+        }
+      }, 600);
+    } else {
+      // Если не правильно - показываем примечание (если есть) или ждем дольше
+      if (quizQuestions[currentQuestionIndex].note) {
+        setShowNote(true);
+      } else {
+        setTimeout(() => proceedToNext(false), 2000);
+      }
+    }
+  };
 
+  const proceedToNext = (isCorrect: boolean) => {
+    setShowNote(false);
+    setSelectedOption(null);
     if (currentQuestionIndex + 1 < quizQuestions.length) {
       setCurrentQuestionIndex(prev => prev + 1);
     } else {
@@ -237,10 +264,42 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
                 <div className="text-gray-400 mb-8">Вопрос {currentQuestionIndex+1}/{quizQuestions.length}</div>
                 <h2 className="text-xl font-bold mb-8">{question.question}</h2>
                 <div className="space-y-3">
-                    {question.options.map((opt, idx) => (
-                        <button key={idx} onClick={() => handleAnswer(idx)} className="w-full text-left p-4 rounded-xl border bg-white hover:border-blue-500 transition-all">{opt}</button>
-                    ))}
+                    {question.options.map((opt, idx) => {
+                        const isSelected = selectedOption === idx;
+                        const isCorrect = idx === question.correctAnswerIndex;
+                        let btnClass = "w-full text-left p-4 rounded-xl border bg-white transition-all ";
+                        
+                        if (selectedOption !== null) {
+                            if (isSelected) {
+                                if (isCorrect) {
+                                    btnClass += "border-emerald-500 bg-emerald-50 text-emerald-700 ";
+                                } else {
+                                    btnClass += "border-rose-500 bg-rose-50 text-rose-700 ";
+                                }
+                            } else {
+                                btnClass += "opacity-50 ";
+                            }
+                        } else {
+                            btnClass += "hover:border-blue-500 ";
+                        }
+
+                        return (
+                            <button key={idx} disabled={selectedOption !== null} onClick={() => handleAnswer(idx)} className={btnClass}>
+                                {opt}
+                            </button>
+                        );
+                    })}
                 </div>
+
+                {showNote && question.note && (
+                    <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                        <h4 className="font-bold text-blue-800 mb-1">Примечание:</h4>
+                        <p className="text-blue-700 text-sm">{question.note}</p>
+                        <button onClick={() => proceedToNext(selectedOption === question.correctAnswerIndex)} className="mt-4 w-full py-3 bg-blue-600 text-white rounded-xl font-bold">
+                            Далее
+                        </button>
+                    </div>
+                )}
           </div>
       );
   }
@@ -251,7 +310,17 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
                <div className="flex justify-between items-center mb-6"><h2 className="font-bold">Практика</h2><button onClick={() => setView('DASHBOARD')}><XCircle size={24}/></button></div>
                 <div className="bg-white p-6 rounded-2xl border mb-6">
                     <h3 className="text-xl font-bold mb-2">{practiceTask?.title}</h3>
-                    <p className="text-gray-600 mb-4">{practiceTask?.description}</p>
+                    {practiceTask?.imageUrl ? (
+                        <div className="mb-4 overflow-hidden rounded-xl border border-gray-100 shadow-sm">
+                            <img 
+                                src={practiceTask.imageUrl} 
+                                alt={practiceTask.title} 
+                                className="w-full h-auto object-contain"
+                            />
+                        </div>
+                    ) : (
+                        <p className="text-gray-600 mb-4">{practiceTask?.description}</p>
+                    )}
                     <div className="font-bold text-emerald-600">Цель: {practiceTask?.durationOrReps}</div>
                 </div>
                 <label className="flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-2xl cursor-pointer bg-white mb-6">

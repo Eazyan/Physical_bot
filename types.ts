@@ -20,12 +20,14 @@ export interface QuizQuestion {
   question: string;
   options: string[];
   correctAnswerIndex: number;
+  note?: string;
 }
 
 export interface PracticeTask {
   title: string;
   description: string;
   durationOrReps: string;
+  imageUrl?: string;
 }
 
 export interface Submission {

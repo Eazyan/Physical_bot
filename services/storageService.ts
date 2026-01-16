@@ -1,11 +1,10 @@
 
 import { Student, Submission, SubmissionStatus, TaskType, PracticeTask, UserRole } from "../types";
 
-// ИСПОЛЬЗУЕМ ОТНОСИТЕЛЬНЫЕ ПУТИ
-// Браузер сам поймет, что нужно обращаться к тому же серверу, откуда загрузился сайт.
-// Это решает проблему с IP адресами и портами.
-const API_BASE = '/api';
-const UPLOADS_BASE = ''; // Пути к файлам уже будут относительными (напр. /uploads/video.mp4)
+// ИСПОЛЬЗУЕМ ОТНОСИТЕЛЬНЫЕ ПУТИ С ПРЕФИКСОМ /phys-app
+// Это необходимо для работы через Apache проксирование без конфликтов с основным приложением
+const API_BASE = '/phys-app/api';
+const UPLOADS_BASE = '/phys-app'; // Пути к файлам с префиксом (напр. /phys-app/uploads/video.mp4)
 const SESSION_KEY = "pe_bot_session";
 
 const normalizeName = (name: string): string => {
@@ -41,7 +40,7 @@ export const registerNewStudent = async (fullName: string, groupNumber: string, 
     fullName: fullName.trim().replace(/\s+/g, ' '), 
     groupNumber: groupNumber.trim(),
     password: password, 
-    missedClasses: 10,
+    missedClasses: 0,
     classesMadeUp: 0,
     permissions: { canDoTheory: true, canDoPractice: true }
   };

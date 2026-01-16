@@ -34,37 +34,42 @@ app.use((req, res, next) => {
 // === API ROUTES ===
 app.get('/health', (req, res) => res.send('OK'));
 
-app.get('/api/students', (req, res) => res.json(readDB().students));
-app.post('/api/students', (req, res) => {
-    const db = readDB();
-    const student = req.body;
-    const index = db.students.findIndex(s => s.id === student.id);
-    if (index !== -1) db.students[index] = { ...db.students[index], ...student };
-    else db.students.push(student);
-    writeDB(db);
-    res.json({ success: true, student });
-});
-
-app.get('/api/submissions', (req, res) => res.json(readDB().submissions));
-app.post('/api/submissions', (req, res) => {
-    const db = readDB();
-    const { submission, videoBase64 } = req.body;
-    let finalSub = { ...submission };
-
-    if (videoBase64) {
-        const fileName = `video_${Date.now()}.mp4`;
-        const filePath = path.join(UPLOADS_DIR, fileName);
-        const base64Data = videoBase64.replace(/^data:video\/\w+;base64,/, "");
-        fs.writeFileSync(filePath, base64Data, 'base64');
-        finalSub.videoUrl = `/uploads/${fileName}`;
+// Функция для обработки API запросов
+const handleApiStudents = {
+    get: (req, res) => res.json(readDB().students),
+    post: (req, res) => {
+        const db = readDB();
+        const student = req.body;
+        const index = db.students.findIndex(s => s.id === student.id);
+        if (index !== -1) db.students[index] = { ...db.students[index], ...student };
+        else db.students.push(student);
+        writeDB(db);
+        res.json({ success: true, student });
     }
+};
 
-    db.submissions.unshift(finalSub);
-    writeDB(db);
-    res.json({ success: true, submission: finalSub });
-});
+const handleApiSubmissions = {
+    get: (req, res) => res.json(readDB().submissions),
+    post: (req, res) => {
+        const db = readDB();
+        const { submission, videoBase64 } = req.body;
+        let finalSub = { ...submission };
 
-app.patch('/api/submissions/:id', (req, res) => {
+        if (videoBase64) {
+            const fileName = `video_${Date.now()}.mp4`;
+            const filePath = path.join(UPLOADS_DIR, fileName);
+            const base64Data = videoBase64.replace(/^data:video\/\w+;base64,/, "");
+            fs.writeFileSync(filePath, base64Data, 'base64');
+            finalSub.videoUrl = `/phys-app/uploads/${fileName}`;
+        }
+
+        db.submissions.unshift(finalSub);
+        writeDB(db);
+        res.json({ success: true, submission: finalSub });
+    }
+};
+
+const handleApiSubmissionsPatch = (req, res) => {
     const db = readDB();
     const { id } = req.params;
     const { status } = req.body;
@@ -80,19 +85,36 @@ app.patch('/api/submissions/:id', (req, res) => {
     } else {
         res.status(404).json({ error: 'Not found' });
     }
-});
+};
+
+// API маршруты с префиксом /phys-app/api (для работы через Apache)
+app.get('/phys-app/api/students', handleApiStudents.get);
+app.post('/phys-app/api/students', handleApiStudents.post);
+app.get('/phys-app/api/submissions', handleApiSubmissions.get);
+app.post('/phys-app/api/submissions', handleApiSubmissions.post);
+app.patch('/phys-app/api/submissions/:id', handleApiSubmissionsPatch);
+
+// API маршруты без префикса (для прямого доступа к localhost:3002)
+app.get('/api/students', handleApiStudents.get);
+app.post('/api/students', handleApiStudents.post);
+app.get('/api/submissions', handleApiSubmissions.get);
+app.post('/api/submissions', handleApiSubmissions.post);
+app.patch('/api/submissions/:id', handleApiSubmissionsPatch);
 
 // === РАЗДАЧА ФРОНТЕНДА И ФАЙЛОВ ===
 
-// 1. Сначала раздаем API и загруженные файлы
+// 1. Сначала раздаем загруженные файлы (с префиксом /phys-app и без него)
+app.use('/phys-app/uploads', express.static(UPLOADS_DIR));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // 2. Middleware для обработки запросов с префиксом /phys-app
 // Когда Apache проксирует /phys-app/... на http://localhost:3002/phys-app/...,
-// мы убираем префикс /phys-app перед обработкой статики
+// мы убираем префикс /phys-app перед обработкой статики (но НЕ для API)
 app.use('/phys-app', (req, res, next) => {
-    // Временно сохраняем оригинальный URL
-    const originalUrl = req.originalUrl || req.url;
+    // НЕ трогаем API запросы - они обрабатываются отдельными маршрутами выше
+    if (req.url.startsWith('/phys-app/api') || req.url.startsWith('/api')) {
+        return next();
+    }
     // Убираем префикс /phys-app из req.url для правильной обработки статики
     if (req.url.startsWith('/phys-app')) {
         req.url = req.url.replace(/^\/phys-app/, '') || '/';
