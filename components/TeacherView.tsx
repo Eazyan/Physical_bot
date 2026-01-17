@@ -70,20 +70,44 @@ export default function TeacherView({ onLogout }: Props) {
                           <div className="text-2xl font-bold text-red-600">{debt}</div>
                           <div className="text-[10px] uppercase">Долг</div>
                       </div>
-                      <div className="p-4 rounded-xl border bg-gray-50 text-center relative group">
+                      <div className="p-4 rounded-xl border bg-gray-50 text-center relative overflow-hidden">
                           <div className="text-2xl font-bold">{student.missedClasses}</div>
-                          <div className="text-[10px] uppercase">Пропуски</div>
-                          <div className="absolute inset-0 bg-white/90 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1">
-                              <button onClick={() => handleManualUpdate('missedClasses', -1)}><Minus size={14}/></button>
-                              <button onClick={() => handleManualUpdate('missedClasses', 1)}><Plus size={14}/></button>
+                          <div className="text-[10px] uppercase text-gray-400">Пропуски</div>
+                          <div className="flex items-center justify-center gap-4 mt-2 border-t pt-2">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleManualUpdate('missedClasses', -1); }} 
+                                className="w-10 h-10 flex items-center justify-center bg-white border rounded-full shadow-sm active:scale-95 transition-transform"
+                                style={{ WebkitTapHighlightColor: 'transparent' }}
+                              >
+                                <Minus size={18} className="text-gray-600"/>
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleManualUpdate('missedClasses', 1); }} 
+                                className="w-10 h-10 flex items-center justify-center bg-blue-50 border border-blue-100 rounded-full shadow-sm active:scale-95 transition-transform"
+                                style={{ WebkitTapHighlightColor: 'transparent' }}
+                              >
+                                <Plus size={18} className="text-blue-600"/>
+                              </button>
                           </div>
                       </div>
-                      <div className="p-4 rounded-xl border bg-gray-50 text-center relative group">
+                      <div className="p-4 rounded-xl border bg-gray-50 text-center relative overflow-hidden">
                           <div className="text-2xl font-bold">{student.classesMadeUp}</div>
-                          <div className="text-[10px] uppercase">Зачтено</div>
-                           <div className="absolute inset-0 bg-white/90 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1">
-                              <button onClick={() => handleManualUpdate('classesMadeUp', -1)}><Minus size={14}/></button>
-                              <button onClick={() => handleManualUpdate('classesMadeUp', 1)}><Plus size={14}/></button>
+                          <div className="text-[10px] uppercase text-gray-400">Зачтено</div>
+                          <div className="flex items-center justify-center gap-4 mt-2 border-t pt-2">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleManualUpdate('classesMadeUp', -1); }} 
+                                className="w-10 h-10 flex items-center justify-center bg-white border rounded-full shadow-sm active:scale-95 transition-transform"
+                                style={{ WebkitTapHighlightColor: 'transparent' }}
+                              >
+                                <Minus size={18} className="text-gray-600"/>
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleManualUpdate('classesMadeUp', 1); }} 
+                                className="w-10 h-10 flex items-center justify-center bg-emerald-50 border border-emerald-100 rounded-full shadow-sm active:scale-95 transition-transform"
+                                style={{ WebkitTapHighlightColor: 'transparent' }}
+                              >
+                                <Plus size={18} className="text-emerald-600"/>
+                              </button>
                           </div>
                       </div>
                   </div>
