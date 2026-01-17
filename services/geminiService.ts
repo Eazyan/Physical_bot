@@ -1893,8 +1893,8 @@ export const generateQuiz = async (topic: string = "Общая физкульт�
   // Имитация задержки сети
   await new Promise(resolve => setTimeout(resolve, 600));
   
-  // Возвращаем 5 случайных вопросов
-  return shuffle(QUESTION_BANK).slice(0, 5);
+  // Возвращаем 15 случайных вопросов
+  return shuffle(QUESTION_BANK).slice(0, 15);
 };
 
 export const generatePracticeTask = async (): Promise<PracticeTask> => {

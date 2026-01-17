@@ -101,7 +101,7 @@ export const getSubmissions = async (): Promise<Submission[]> => {
 };
 
 export const submitTheoryResult = async (studentId: string, score: number, total: number): Promise<boolean> => {
-  const isPassed = (score / total) >= 0.6;
+  const isPassed = (score >= 12);
   const sub: Submission = {
     id: Date.now().toString(),
     studentId,
