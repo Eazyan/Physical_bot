@@ -176,16 +176,7 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
     setLoading(true);
 
     try {
-      const base64Videos = await Promise.all(
-        videoFiles.map(file => new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(file);
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-        }))
-      );
-
-      await submitPracticeVideo(student!.id, practiceTask, "", base64Videos);
+      await submitPracticeVideo(student!.id, practiceTask, videoFiles);
       setLoading(false);
       setView('DASHBOARD');
       alert(`Загружено файлов: ${videoFiles.length}. Видео отправлены на проверку!`);

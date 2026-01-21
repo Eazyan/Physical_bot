@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+import multer from 'multer';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,6 +12,19 @@ const app = express();
 const PORT = 3002;
 const DB_FILE = path.join(__dirname, 'db.json');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
+
+// Настройка Multer для больших файлов
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 1024 * 1024 * 1024 } // 1GB limit
+});
 
 // Инициализация
 try {
@@ -91,6 +105,27 @@ const handleApiSubmissions = {
     }
 };
 
+const handleMultipartSubmission = (req, res) => {
+    try {
+        const db = readDB();
+        const submission = JSON.parse(req.body.submission);
+        let finalSub = { ...submission, videoUrls: [] };
+
+        if (req.files && req.files.length > 0) {
+            req.files.forEach(file => {
+                finalSub.videoUrls.push(`/phys-app/uploads/${file.filename}`);
+            });
+        }
+
+        db.submissions.unshift(finalSub);
+        writeDB(db);
+        res.json({ success: true, submission: finalSub });
+    } catch (err) {
+        console.error('[MULTIPART ERROR]', err);
+        res.status(500).json({ error: 'Ошибка обработки загрузки' });
+    }
+};
+
 const handleApiSubmissionsPatch = (req, res) => {
     const db = readDB();
     const { id } = req.params;
@@ -114,6 +149,7 @@ app.get('/phys-app/api/students', handleApiStudents.get);
 app.post('/phys-app/api/students', handleApiStudents.post);
 app.get('/phys-app/api/submissions', handleApiSubmissions.get);
 app.post('/phys-app/api/submissions', handleApiSubmissions.post);
+app.post('/phys-app/api/submissions/multipart', upload.array('videos'), handleMultipartSubmission);
 app.patch('/phys-app/api/submissions/:id', handleApiSubmissionsPatch);
 
 // API маршруты без префикса (для прямого доступа к localhost:3002)
@@ -121,11 +157,60 @@ app.get('/api/students', handleApiStudents.get);
 app.post('/api/students', handleApiStudents.post);
 app.get('/api/submissions', handleApiSubmissions.get);
 app.post('/api/submissions', handleApiSubmissions.post);
+app.post('/api/submissions/multipart', upload.array('videos'), handleMultipartSubmission);
 app.patch('/api/submissions/:id', handleApiSubmissionsPatch);
 
 // === РАЗДАЧА ФРОНТЕНДА И ФАЙЛОВ ===
 
-// 1. Сначала раздаем загруженные файлы (с префиксом /phys-app и без него)
+// 1. Кастомная раздача видеофайлов с поддержкой Range (до статики)
+const streamVideo = (req, res, basePrefix = '') => {
+    try {
+        const { filename } = req.params;
+        const filePath = path.join(UPLOADS_DIR, filename);
+        if (!fs.existsSync(filePath)) return res.status(404).end();
+
+        const stat = fs.statSync(filePath);
+        const fileSize = stat.size;
+        const range = req.headers.range;
+
+        if (!range) {
+            res.setHeader('Content-Length', fileSize);
+            res.setHeader('Content-Type', 'video/mp4');
+            fs.createReadStream(filePath).pipe(res);
+            return;
+        }
+
+        const parts = range.replace(/bytes=*/, 'bytes=').replace(/bytes=/, '').split('-');
+        let start = parseInt(parts[0], 10);
+        let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        if (isNaN(start)) start = 0;
+        if (isNaN(end) || end > fileSize - 1) end = fileSize - 1;
+
+        if (start >= fileSize || end >= fileSize || start > end) {
+            res.status(416);
+            res.setHeader('Content-Range', `bytes */${fileSize}`);
+            return res.end();
+        }
+
+        const chunkSize = (end - start) + 1;
+        res.writeHead(206, {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunkSize,
+            'Content-Type': 'video/mp4',
+        });
+        fs.createReadStream(filePath, { start, end }).pipe(res);
+    } catch (err) {
+        console.error('[STREAM ERROR]', err);
+        res.status(500).end();
+    }
+};
+
+// Маршруты для видео (с префиксом /phys-app и без него)
+app.get('/phys-app/uploads/:filename', (req, res) => streamVideo(req, res, '/phys-app'));
+app.get('/uploads/:filename', (req, res) => streamVideo(req, res));
+
+// 1б. Статическая раздача загруженных файлов (картинки и прочее)
 app.use('/phys-app/uploads', express.static(UPLOADS_DIR));
 app.use('/uploads', express.static(UPLOADS_DIR));
 

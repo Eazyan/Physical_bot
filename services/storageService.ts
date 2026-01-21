@@ -121,7 +121,7 @@ export const submitTheoryResult = async (studentId: string, score: number, total
   return isPassed;
 };
 
-export const submitPracticeVideo = async (studentId: string, task: PracticeTask, videoBase64: string, videosBase64?: string[]) => {
+export const submitPracticeVideo = async (studentId: string, task: PracticeTask, videoFiles: File[]) => {
   const sub: Submission = {
     id: Date.now().toString(),
     studentId,
@@ -131,10 +131,15 @@ export const submitPracticeVideo = async (studentId: string, task: PracticeTask,
     taskDetails: task
   };
 
-  const res = await fetch(`${API_BASE}/submissions`, {
+  const formData = new FormData();
+  formData.append('submission', JSON.stringify(sub));
+  videoFiles.forEach(file => {
+    formData.append('videos', file);
+  });
+
+  const res = await fetch(`${API_BASE}/submissions/multipart`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submission: sub, videoBase64, videosBase64 })
+      body: formData
   });
   
   if (!res.ok) throw new Error("Ошибка загрузки");
