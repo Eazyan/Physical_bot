@@ -21,16 +21,51 @@ const EXT_TO_MIME = {
     '.mp4': 'video/mp4',
     '.mov': 'video/quicktime',
     '.webm': 'video/webm',
+    '.ogg': 'video/ogg',
+    '.ogv': 'video/ogg',
+    '.m4v': 'video/x-m4v',
+    '.mkv': 'video/x-matroska',
+    '.avi': 'video/x-msvideo',
+    '.wmv': 'video/x-ms-wmv',
+    '.3gp': 'video/3gpp',
+    '.3g2': 'video/3gpp2',
+    '.mpeg': 'video/mpeg',
+    '.mpg': 'video/mpeg',
+    '.ts': 'video/mp2t',
+    '.m2ts': 'video/mp2t',
+    '.mts': 'video/mp2t',
+    '.flv': 'video/x-flv',
+    '.f4v': 'video/x-f4v',
+    '.mxf': 'application/mxf',
 };
 
 const MIME_TO_EXT = {
     'video/mp4': '.mp4',
     'video/quicktime': '.mov',
     'video/webm': '.webm',
+    'video/ogg': '.ogg',
+    'video/x-m4v': '.m4v',
+    'video/x-matroska': '.mkv',
+    'video/x-msvideo': '.avi',
+    'video/x-ms-wmv': '.wmv',
+    'video/3gpp': '.3gp',
+    'video/3gpp2': '.3g2',
+    'video/mpeg': '.mpeg',
+    'video/mp2t': '.ts',
+    'video/x-flv': '.flv',
+    'video/x-f4v': '.f4v',
+    'application/mxf': '.mxf',
 };
 
-const ALLOWED_EXTS = new Set(['.mp4', '.mov', '.webm']);
-const ALLOWED_MIMES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
+const ALLOWED_EXTS = new Set([
+    '.mp4', '.mov', '.webm', '.ogg', '.ogv', '.m4v', '.mkv', '.avi', '.wmv',
+    '.3gp', '.3g2', '.mpeg', '.mpg', '.ts', '.m2ts', '.mts', '.flv', '.f4v', '.mxf',
+]);
+const ALLOWED_MIMES = new Set([
+    'video/mp4', 'video/quicktime', 'video/webm', 'video/ogg', 'video/x-m4v',
+    'video/x-matroska', 'video/x-msvideo', 'video/x-ms-wmv', 'video/3gpp', 'video/3gpp2',
+    'video/mpeg', 'video/mp2t', 'video/x-flv', 'video/x-f4v', 'application/mxf',
+]);
 
 const FFMPEG_AVAILABLE = (() => {
     try {
@@ -60,7 +95,7 @@ const upload = multer({
         const isAllowedExt = ALLOWED_EXTS.has(ext);
         const isAllowedMime = ALLOWED_MIMES.has(file.mimetype);
         if (isAllowedExt || isAllowedMime) return cb(null, true);
-        const err = new Error('Недопустимый формат видео. Разрешены: mp4, mov, webm.');
+        const err = new Error('Недопустимый формат видео. Разрешены: mp4, mov, webm, avi, mkv, wmv, ogg, ogv, m4v, 3gp, 3g2, mpeg, mpg, ts, m2ts, mts, flv, f4v, mxf.');
         err.code = 'INVALID_FILE_TYPE';
         return cb(err);
     },
@@ -251,7 +286,9 @@ const handleMultipartSubmission = async (req, res) => {
             const outputPath = path.join(UPLOADS_DIR, outputName);
             convertedPaths.push(outputPath);
 
+            console.log(`[TRANSCODE] start: ${file.originalname} -> ${outputName}`);
             await transcodeToMp4(inputPath, outputPath);
+            console.log(`[TRANSCODE] done: ${file.originalname} -> ${outputName}`);
 
             if (!fs.existsSync(outputPath)) {
                 cleanupPaths(convertedPaths);

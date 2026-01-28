@@ -160,7 +160,7 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
-      const allowedExts = ['mp4', 'mov', 'webm'];
+      const allowedExts = ['mp4', 'mov', 'webm', 'ogg', 'ogv', 'm4v', 'mkv', 'avi', 'wmv', '3gp', '3g2', 'mpeg', 'mpg', 'ts', 'm2ts', 'mts', 'flv', 'f4v', 'mxf'];
       const hasUnsupported = newFiles.some(f => {
         const ext = f.name.split('.').pop()?.toLowerCase();
         return !ext || !allowedExts.includes(ext);
@@ -171,7 +171,7 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
       const totalSize = [...videoFiles, ...newFiles].reduce((acc, f) => acc + f.size, 0);
 
       if (hasUnsupported) {
-        alert("Разрешены только форматы: MP4, MOV, WEBM.");
+        alert("Разрешены только форматы: MP4, MOV, WEBM, AVI, MKV, WMV, OGG, OGV, M4V, 3GP, 3G2, MPEG, MPG, TS, M2TS, MTS, FLV, F4V, MXF.");
         return;
       }
 
@@ -369,12 +369,12 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
                         <>
                             <Upload size={40} className="text-gray-300 mb-2" />
                             <span className="text-gray-500 font-medium">Загрузить видео (можно несколько)</span>
-                            <span className="text-xs text-gray-400 mt-1">Форматы: MP4, MOV, WEBM • Макс. общий размер: 1.5ГБ</span>
+                            <span className="text-xs text-gray-400 mt-1">Форматы: MP4, MOV, WEBM, AVI, MKV, WMV, OGG, OGV, M4V, 3GP, 3G2, MPEG, MPG, TS, M2TS, MTS, FLV, F4V, MXF • Макс. общий размер: 1.5ГБ</span>
                         </>
                     )}
                     <input
                         type="file"
-                        accept=".mp4,.mov,.webm"
+                        accept=".mp4,.mov,.webm,.ogg,.ogv,.m4v,.mkv,.avi,.wmv,.3gp,.3g2,.mpeg,.mpg,.ts,.m2ts,.mts,.flv,.f4v,.mxf"
                         multiple
                         className="hidden"
                         onChange={handleVideoUpload}
