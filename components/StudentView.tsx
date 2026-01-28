@@ -32,6 +32,7 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
   const [practiceTask, setPracticeTask] = useState<PracticeTask | null>(null);
   const [videoFiles, setVideoFiles] = useState<File[]>([]);
   const [practiceLoading, setPracticeLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   useEffect(() => {
     if (student) {
@@ -159,10 +160,17 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
-      const maxSize = 1000 * 1024 * 1024 * 1.5; // 1.5GB in bytes
+      const maxTotalSize = 1.5 * 1024 * 1024 * 1024; // 1.5GB in bytes
+      const maxFileSize = maxTotalSize;
+      const hasTooLargeFile = newFiles.some(f => f.size > maxFileSize);
       const totalSize = [...videoFiles, ...newFiles].reduce((acc, f) => acc + f.size, 0);
+
+      if (hasTooLargeFile) {
+        alert("Один из файлов превышает 1.5ГБ. Выберите файл меньшего размера.");
+        return;
+      }
       
-      if (totalSize > maxSize) {
+      if (totalSize > maxTotalSize) {
         alert("Общий размер видео превышает 1.5ГБ. Выберите файлы меньшего размера.");
         return;
       }
@@ -174,15 +182,20 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
   const submitPractice = async () => {
     if (videoFiles.length === 0 || !practiceTask) return;
     setLoading(true);
+    setUploadProgress(0);
 
     try {
-      await submitPracticeVideo(student!.id, practiceTask, videoFiles);
+      await submitPracticeVideo(student!.id, practiceTask, videoFiles, (percent) => {
+        setUploadProgress(percent);
+      });
       setLoading(false);
       setView('DASHBOARD');
+      setUploadProgress(null);
       alert(`Загружено файлов: ${videoFiles.length}. Видео отправлены на проверку!`);
     } catch (e: any) {
       alert(e.message || "Ошибка загрузки.");
       setLoading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -346,14 +359,34 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
                         <>
                             <Upload size={40} className="text-gray-300 mb-2" />
                             <span className="text-gray-500 font-medium">Загрузить видео (можно несколько)</span>
-                            <span className="text-xs text-gray-400 mt-1">Макс. общий размер: 1ГБ</span>
+                            <span className="text-xs text-gray-400 mt-1">Макс. общий размер: 1.5ГБ</span>
                         </>
                     )}
-                    <input type="file" accept="video/*" multiple className="hidden" onChange={handleVideoUpload} />
+                    <input
+                        type="file"
+                        accept=".mp4,.mov,.webm,.ogg,.ogv,.m4v,.mkv,.avi,.3gp,.3g2,.mpeg,.mpg"
+                        multiple
+                        className="hidden"
+                        onChange={handleVideoUpload}
+                    />
                 </label>
                 <button onClick={submitPractice} disabled={videoFiles.length === 0 || loading} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50">
                     {loading ? <Loader2 className="animate-spin mx-auto" /> : `Отправить на проверку (${videoFiles.length})`}
                 </button>
+                {loading && uploadProgress !== null && (
+                    <div className="mt-4">
+                        <div className="flex justify-between text-xs text-gray-500 mb-1">
+                            <span>Загрузка...</span>
+                            <span>{uploadProgress}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-emerald-500 transition-all"
+                                style={{ width: `${uploadProgress}%` }}
+                            />
+                        </div>
+                    </div>
+                )}
           </div>
       );
   }

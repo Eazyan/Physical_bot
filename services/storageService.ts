@@ -1,10 +1,17 @@
 
 import { Student, Submission, SubmissionStatus, TaskType, PracticeTask, UserRole } from "../types";
 
-// ИСПОЛЬЗУЕМ ОТНОСИТЕЛЬНЫЕ ПУТИ С ПРЕФИКСОМ /phys-app
-// Это необходимо для работы через Apache проксирование без конфликтов с основным приложением
-const API_BASE = '/phys-app/api';
-const UPLOADS_BASE = '/phys-app'; // Пути к файлам с префиксом (напр. /phys-app/uploads/video.mp4)
+const getAppBase = (): string => {
+    if (typeof window === 'undefined') return '';
+    const path = window.location.pathname || '';
+    if (path === '/phys-app' || path.startsWith('/phys-app/')) return '/phys-app';
+    return '';
+};
+
+// Поддерживаем запуск как с /phys-app, так и с корня
+const APP_BASE = getAppBase();
+const API_BASE = `${APP_BASE}/api`;
+const UPLOADS_BASE = APP_BASE;
 const SESSION_KEY = "pe_bot_session";
 
 const normalizeName = (name: string): string => {
@@ -93,8 +100,23 @@ export const getSubmissions = async (): Promise<Submission[]> => {
     try {
         const res = await fetch(`${API_BASE}/submissions`);
         const subs: Submission[] = await res.json();
-        // Просто возвращаем как есть, так как пути уже относительные (/uploads/...)
-        return subs;
+        const normalizeVideoUrl = (url?: string) => {
+            if (!url) return url;
+            if (url.startsWith('http://') || url.startsWith('https://')) return url;
+            if (APP_BASE) {
+                if (url.startsWith('/phys-app/')) return url;
+                if (url.startsWith('/uploads/')) return `${UPLOADS_BASE}${url}`;
+                if (url.startsWith('uploads/')) return `${UPLOADS_BASE}/${url}`;
+                return url;
+            }
+            if (url.startsWith('/phys-app/')) return url.replace(/^\/phys-app/, '');
+            return url;
+        };
+        return subs.map(sub => ({
+            ...sub,
+            videoUrl: normalizeVideoUrl(sub.videoUrl),
+            videoUrls: sub.videoUrls ? sub.videoUrls.map(v => normalizeVideoUrl(v)) : undefined,
+        }));
     } catch (e) {
         return [];
     }
@@ -121,7 +143,12 @@ export const submitTheoryResult = async (studentId: string, score: number, total
   return isPassed;
 };
 
-export const submitPracticeVideo = async (studentId: string, task: PracticeTask, videoFiles: File[]) => {
+export const submitPracticeVideo = async (
+  studentId: string,
+  task: PracticeTask,
+  videoFiles: File[],
+  onProgress?: (percent: number) => void
+) => {
   const sub: Submission = {
     id: Date.now().toString(),
     studentId,
@@ -137,12 +164,39 @@ export const submitPracticeVideo = async (studentId: string, task: PracticeTask,
     formData.append('videos', file);
   });
 
-  const res = await fetch(`${API_BASE}/submissions/multipart`, {
-      method: 'POST',
-      body: formData
+  await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/submissions/multipart`);
+
+      if (xhr.upload && onProgress) {
+          xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable) {
+                  const percent = Math.round((event.loaded / event.total) * 100);
+                  onProgress(Math.min(100, Math.max(0, percent)));
+              }
+          };
+      }
+
+      xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+              if (onProgress) onProgress(100);
+              resolve();
+              return;
+          }
+          let message = "Ошибка загрузки";
+          try {
+              const data = JSON.parse(xhr.responseText || "{}");
+              if (data?.error) message = data.error;
+          } catch (e) {
+              // ignore
+          }
+          reject(new Error(message));
+      };
+
+      xhr.onerror = () => reject(new Error("Ошибка сети при загрузке"));
+      xhr.onabort = () => reject(new Error("Загрузка отменена"));
+      xhr.send(formData);
   });
-  
-  if (!res.ok) throw new Error("Ошибка загрузки");
 };
 
 export const updateSubmissionStatus = async (id: string, status: SubmissionStatus) => {

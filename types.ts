@@ -30,6 +30,14 @@ export interface PracticeTask {
   imageUrl?: string;
 }
 
+export interface VideoMeta {
+  url: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+  sha256: string;
+}
+
 export interface Submission {
   id: string;
   studentId: string;
@@ -43,6 +51,7 @@ export interface Submission {
   taskDetails?: PracticeTask;
   videoUrl?: string; // Simulated URL
   videoUrls?: string[];
+  videoMeta?: VideoMeta[];
 }
 
 export interface StudentPermissions {
