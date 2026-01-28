@@ -160,10 +160,20 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
+      const allowedExts = ['mp4', 'mov', 'webm'];
+      const hasUnsupported = newFiles.some(f => {
+        const ext = f.name.split('.').pop()?.toLowerCase();
+        return !ext || !allowedExts.includes(ext);
+      });
       const maxTotalSize = 1.5 * 1024 * 1024 * 1024; // 1.5GB in bytes
       const maxFileSize = maxTotalSize;
       const hasTooLargeFile = newFiles.some(f => f.size > maxFileSize);
       const totalSize = [...videoFiles, ...newFiles].reduce((acc, f) => acc + f.size, 0);
+
+      if (hasUnsupported) {
+        alert("Разрешены только форматы: MP4, MOV, WEBM.");
+        return;
+      }
 
       if (hasTooLargeFile) {
         alert("Один из файлов превышает 1.5ГБ. Выберите файл меньшего размера.");
@@ -359,12 +369,12 @@ export default function StudentView({ student, onLogin, onLogout }: Props) {
                         <>
                             <Upload size={40} className="text-gray-300 mb-2" />
                             <span className="text-gray-500 font-medium">Загрузить видео (можно несколько)</span>
-                            <span className="text-xs text-gray-400 mt-1">Макс. общий размер: 1.5ГБ</span>
+                            <span className="text-xs text-gray-400 mt-1">Форматы: MP4, MOV, WEBM • Макс. общий размер: 1.5ГБ</span>
                         </>
                     )}
                     <input
                         type="file"
-                        accept=".mp4,.mov,.webm,.ogg,.ogv,.m4v,.mkv,.avi,.3gp,.3g2,.mpeg,.mpg"
+                        accept=".mp4,.mov,.webm"
                         multiple
                         className="hidden"
                         onChange={handleVideoUpload}

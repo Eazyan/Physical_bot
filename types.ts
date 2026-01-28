@@ -36,6 +36,9 @@ export interface VideoMeta {
   size: number;
   mimeType: string;
   sha256: string;
+  originalFilename?: string;
+  originalSize?: number;
+  transcoded?: boolean;
 }
 
 export interface Submission {

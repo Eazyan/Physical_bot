@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
 import { randomUUID, createHash } from 'crypto';
+import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,29 +21,25 @@ const EXT_TO_MIME = {
     '.mp4': 'video/mp4',
     '.mov': 'video/quicktime',
     '.webm': 'video/webm',
-    '.ogg': 'video/ogg',
-    '.ogv': 'video/ogg',
-    '.m4v': 'video/x-m4v',
-    '.mkv': 'video/x-matroska',
-    '.avi': 'video/x-msvideo',
-    '.3gp': 'video/3gpp',
-    '.3g2': 'video/3gpp2',
-    '.mpeg': 'video/mpeg',
-    '.mpg': 'video/mpeg',
 };
 
 const MIME_TO_EXT = {
     'video/mp4': '.mp4',
     'video/quicktime': '.mov',
     'video/webm': '.webm',
-    'video/ogg': '.ogg',
-    'video/x-m4v': '.m4v',
-    'video/x-matroska': '.mkv',
-    'video/x-msvideo': '.avi',
-    'video/3gpp': '.3gp',
-    'video/3gpp2': '.3g2',
-    'video/mpeg': '.mpeg',
 };
+
+const ALLOWED_EXTS = new Set(['.mp4', '.mov', '.webm']);
+const ALLOWED_MIMES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
+
+const FFMPEG_AVAILABLE = (() => {
+    try {
+        const res = spawnSync('ffmpeg', ['-version']);
+        return res.status === 0;
+    } catch (e) {
+        return false;
+    }
+})();
 
 // Настройка Multer для больших файлов
 const storage = multer.diskStorage({
@@ -60,10 +57,10 @@ const upload = multer({
     limits: { fileSize: MAX_FILE_SIZE_BYTES },
     fileFilter: (req, file, cb) => {
         const ext = path.extname(file.originalname || '').toLowerCase();
-        const isAllowedExt = !!EXT_TO_MIME[ext];
-        const isAllowedMime = !!MIME_TO_EXT[file.mimetype];
+        const isAllowedExt = ALLOWED_EXTS.has(ext);
+        const isAllowedMime = ALLOWED_MIMES.has(file.mimetype);
         if (isAllowedExt || isAllowedMime) return cb(null, true);
-        const err = new Error('Недопустимый формат видео.');
+        const err = new Error('Недопустимый формат видео. Разрешены: mp4, mov, webm.');
         err.code = 'INVALID_FILE_TYPE';
         return cb(err);
     },
@@ -156,12 +153,48 @@ const cleanupFiles = (files = []) => {
     });
 };
 
+const cleanupPaths = (paths = []) => {
+    paths.forEach(filePath => {
+        if (filePath && fs.existsSync(filePath)) {
+            try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
+        }
+    });
+};
+
 const computeSha256 = (filePath) => new Promise((resolve, reject) => {
     const hash = createHash('sha256');
     const stream = fs.createReadStream(filePath);
     stream.on('error', reject);
     stream.on('data', (chunk) => hash.update(chunk));
     stream.on('end', () => resolve(hash.digest('hex')));
+});
+
+const transcodeToMp4 = (inputPath, outputPath) => new Promise((resolve, reject) => {
+    const args = [
+        '-y',
+        '-i', inputPath,
+        '-map', '0:v:0',
+        '-map', '0:a?',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-profile:v', 'high',
+        '-level', '4.1',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        outputPath,
+    ];
+    const proc = spawn('ffmpeg', args);
+    let stderr = '';
+    proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+        if (code === 0) return resolve();
+        const err = new Error('Не удалось конвертировать видео.');
+        err.details = stderr;
+        reject(err);
+    });
 });
 
 const handleMultipartSubmission = async (req, res) => {
@@ -182,6 +215,11 @@ const handleMultipartSubmission = async (req, res) => {
 
         if (!req.files || req.files.length === 0) {
             return res.status(400).json({ error: 'Не загружено ни одного видео.' });
+        }
+
+        if (!FFMPEG_AVAILABLE) {
+            cleanupFiles(req.files);
+            return res.status(500).json({ error: 'Сервер не готов к обработке видео (ffmpeg не найден).' });
         }
 
         const totalSize = req.files.reduce((acc, file) => acc + (file.size || 0), 0);
@@ -206,20 +244,45 @@ const handleMultipartSubmission = async (req, res) => {
         }
 
         finalSub.videoMeta = [];
+        const convertedPaths = [];
         for (const file of req.files) {
-            const filePath = file.path;
-            const sha256 = await computeSha256(filePath);
-            const mimeType = getMimeTypeForFile(filePath);
-            const url = `/uploads/${file.filename}`;
+            const inputPath = file.path;
+            const outputName = `video-${Date.now()}-${randomUUID()}.mp4`;
+            const outputPath = path.join(UPLOADS_DIR, outputName);
+            convertedPaths.push(outputPath);
+
+            await transcodeToMp4(inputPath, outputPath);
+
+            if (!fs.existsSync(outputPath)) {
+                cleanupPaths(convertedPaths);
+                cleanupFiles(req.files);
+                return res.status(500).json({ error: 'Не удалось сохранить конвертированное видео.' });
+            }
+
+            const stat = fs.statSync(outputPath);
+            if (!stat.size) {
+                cleanupPaths(convertedPaths);
+                cleanupFiles(req.files);
+                return res.status(500).json({ error: 'Конвертированное видео пустое. Повторите загрузку.' });
+            }
+
+            const sha256 = await computeSha256(outputPath);
+            const mimeType = getMimeTypeForFile(outputPath);
+            const url = `/uploads/${outputName}`;
             finalSub.videoUrls.push(url);
             finalSub.videoMeta.push({
                 url,
-                filename: file.filename,
-                size: file.size || 0,
+                filename: outputName,
+                size: stat.size,
                 mimeType,
                 sha256,
+                originalFilename: file.originalname,
+                originalSize: file.size || 0,
+                transcoded: true,
             });
         }
+
+        cleanupFiles(req.files);
         finalSub.videoUrl = finalSub.videoUrls[0];
 
         db.submissions.unshift(finalSub);
@@ -429,6 +492,9 @@ function writeDB(data) { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 БОТ ЗАПУЩЕН НА ПОРТУ ${PORT}`);
+    if (!FFMPEG_AVAILABLE) {
+        console.warn('⚠️  ffmpeg не найден: конвертация видео недоступна.');
+    }
     console.log(`---------------------------------------------------`);
     console.log(`1. Соберите фронтенд: npm run build`);
     console.log(`2. Создайте туннель:  npx localtunnel --port ${PORT}`);
