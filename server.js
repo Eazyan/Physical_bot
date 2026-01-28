@@ -14,8 +14,12 @@ const app = express();
 const PORT = 3002;
 const DB_FILE = path.join(__dirname, 'db.json');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const TEMP_UPLOADS_DIR = path.join(__dirname, 'uploads_tmp');
 const MAX_TOTAL_SIZE_BYTES = Math.floor(1.5 * 1024 * 1024 * 1024);
 const MAX_FILE_SIZE_BYTES = MAX_TOTAL_SIZE_BYTES;
+const MIN_FREE_SPACE_BYTES = 300 * 1024 * 1024;
+const TRANSCODE_CONCURRENCY = 2;
+const TRANSCODE_TIMEOUT_MS = 20 * 60 * 1000;
 
 const EXT_TO_MIME = {
     '.mp4': 'video/mp4',
@@ -76,9 +80,46 @@ const FFMPEG_AVAILABLE = (() => {
     }
 })();
 
+const FFPROBE_AVAILABLE = (() => {
+    try {
+        const res = spawnSync('ffprobe', ['-version']);
+        return res.status === 0;
+    } catch (e) {
+        return false;
+    }
+})();
+
+const MIN_VIDEO_SECONDS = 3;
+
+const transcodeQueue = [];
+let activeTranscodes = 0;
+
+const enqueueTranscode = (task) => new Promise((resolve, reject) => {
+    transcodeQueue.push({ task, resolve, reject });
+    processTranscodeQueue();
+});
+
+const processTranscodeQueue = () => {
+    if (activeTranscodes >= TRANSCODE_CONCURRENCY) return;
+    const item = transcodeQueue.shift();
+    if (!item) return;
+    activeTranscodes += 1;
+    (async () => {
+        try {
+            const result = await item.task();
+            item.resolve(result);
+        } catch (err) {
+            item.reject(err);
+        } finally {
+            activeTranscodes -= 1;
+            processTranscodeQueue();
+        }
+    })();
+};
+
 // Настройка Multer для больших файлов
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    destination: (req, file, cb) => cb(null, TEMP_UPLOADS_DIR),
     filename: (req, file, cb) => {
         const uniqueSuffix = `${Date.now()}-${randomUUID()}`;
         const originalExt = path.extname(file.originalname || '').toLowerCase();
@@ -104,6 +145,7 @@ const upload = multer({
 // Инициализация
 try {
     if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    if (!fs.existsSync(TEMP_UPLOADS_DIR)) fs.mkdirSync(TEMP_UPLOADS_DIR, { recursive: true });
     if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ students: [], submissions: [] }, null, 2));
 } catch (err) {
     console.error('Ошибка инициализации:', err);
@@ -204,6 +246,61 @@ const computeSha256 = (filePath) => new Promise((resolve, reject) => {
     stream.on('end', () => resolve(hash.digest('hex')));
 });
 
+const getFreeDiskBytes = (dirPath) => {
+    try {
+        const res = spawnSync('df', ['-k', dirPath], { encoding: 'utf8' });
+        if (res.status !== 0 || !res.stdout) return null;
+        const lines = res.stdout.trim().split('\n');
+        if (lines.length < 2) return null;
+        const parts = lines[lines.length - 1].trim().split(/\s+/);
+        if (parts.length < 4) return null;
+        const availableKb = parseInt(parts[3], 10);
+        if (!Number.isFinite(availableKb)) return null;
+        return availableKb * 1024;
+    } catch (e) {
+        return null;
+    }
+};
+
+const probeVideo = (filePath) => new Promise((resolve, reject) => {
+    const args = [
+        '-v', 'error',
+        '-print_format', 'json',
+        '-show_entries', 'format=duration',
+        filePath,
+    ];
+    const proc = spawn('ffprobe', args);
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+        if (code !== 0) {
+            const err = new Error('ffprobe failed');
+            err.code = 'PROBE_FAILED';
+            err.details = stderr;
+            return reject(err);
+        }
+        try {
+            const data = JSON.parse(stdout || '{}');
+            const duration = parseFloat(data?.format?.duration);
+            if (!Number.isFinite(duration)) {
+                const err = new Error('Invalid duration');
+                err.code = 'PROBE_FAILED';
+                err.details = stderr;
+                return reject(err);
+            }
+            resolve({ duration });
+        } catch (e) {
+            const err = new Error('ffprobe parse failed');
+            err.code = 'PROBE_FAILED';
+            err.details = stderr;
+            reject(err);
+        }
+    });
+});
+
 const transcodeToMp4 = (inputPath, outputPath) => new Promise((resolve, reject) => {
     const args = [
         '-y',
@@ -222,11 +319,19 @@ const transcodeToMp4 = (inputPath, outputPath) => new Promise((resolve, reject) 
     ];
     const proc = spawn('ffmpeg', args);
     let stderr = '';
+    const timeoutId = setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch (e) { /* ignore */ }
+        const err = new Error('Transcode timeout');
+        err.code = 'TRANSCODE_TIMEOUT';
+        reject(err);
+    }, TRANSCODE_TIMEOUT_MS);
     proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
     proc.on('error', reject);
     proc.on('close', (code) => {
+        clearTimeout(timeoutId);
         if (code === 0) return resolve();
         const err = new Error('Не удалось конвертировать видео.');
+        err.code = 'TRANSCODE_FAILED';
         err.details = stderr;
         reject(err);
     });
@@ -252,15 +357,24 @@ const handleMultipartSubmission = async (req, res) => {
             return res.status(400).json({ error: 'Не загружено ни одного видео.' });
         }
 
-        if (!FFMPEG_AVAILABLE) {
+        if (!FFMPEG_AVAILABLE || !FFPROBE_AVAILABLE) {
             cleanupFiles(req.files);
-            return res.status(500).json({ error: 'Сервер не готов к обработке видео (ffmpeg не найден).' });
+            return res.status(500).json({ error: 'Сервер не готов к обработке видео (ffmpeg/ffprobe не найдены).' });
         }
 
         const totalSize = req.files.reduce((acc, file) => acc + (file.size || 0), 0);
         if (totalSize > MAX_TOTAL_SIZE_BYTES) {
             cleanupFiles(req.files);
             return res.status(413).json({ error: 'Общий размер видео превышает лимит 1.5ГБ.' });
+        }
+
+        const freeBytes = getFreeDiskBytes(UPLOADS_DIR);
+        if (freeBytes !== null) {
+            const requiredBytes = (totalSize * 2) + MIN_FREE_SPACE_BYTES;
+            if (freeBytes < requiredBytes) {
+                cleanupFiles(req.files);
+                return res.status(507).json({ error: 'Недостаточно места на сервере для обработки видео.' });
+            }
         }
 
         if (req.files.some(file => (file.size || 0) === 0)) {
@@ -286,9 +400,50 @@ const handleMultipartSubmission = async (req, res) => {
             const outputPath = path.join(UPLOADS_DIR, outputName);
             convertedPaths.push(outputPath);
 
-            console.log(`[TRANSCODE] start: ${file.originalname} -> ${outputName}`);
-            await transcodeToMp4(inputPath, outputPath);
-            console.log(`[TRANSCODE] done: ${file.originalname} -> ${outputName}`);
+            console.log(`[TRANSCODE] queued: ${file.originalname} -> ${outputName}`);
+            try {
+                await enqueueTranscode(async () => {
+                    const probe = await probeVideo(inputPath);
+                    if (probe.duration < MIN_VIDEO_SECONDS) {
+                        const err = new Error('Video too short');
+                        err.code = 'VIDEO_TOO_SHORT';
+                        throw err;
+                    }
+                    console.log(`[TRANSCODE] start: ${file.originalname} -> ${outputName}`);
+                    await transcodeToMp4(inputPath, outputPath);
+                    console.log(`[TRANSCODE] done: ${file.originalname} -> ${outputName}`);
+                });
+            } catch (err) {
+                if (err?.code === 'VIDEO_TOO_SHORT') {
+                    cleanupPaths(convertedPaths);
+                    cleanupFiles(req.files);
+                    return res.status(400).json({
+                        error: `Видео слишком короткое. Минимальная длительность: ${MIN_VIDEO_SECONDS} сек.`,
+                    });
+                }
+                if (err?.code === 'TRANSCODE_TIMEOUT') {
+                    console.error(`[TRANSCODE] timeout: ${file.originalname}`);
+                    cleanupPaths(convertedPaths);
+                    cleanupFiles(req.files);
+                    return res.status(504).json({
+                        error: 'Превышено время конвертации. Попробуйте видео меньшего размера.',
+                    });
+                }
+                if (err?.code === 'PROBE_FAILED') {
+                    console.error(`[PROBE] error: ${file.originalname}`, err?.details || err);
+                    cleanupPaths(convertedPaths);
+                    cleanupFiles(req.files);
+                    return res.status(400).json({
+                        error: 'Файл повреждён или не распознаётся. Перезапишите видео и загрузите снова.',
+                    });
+                }
+                console.error(`[TRANSCODE] error: ${file.originalname}`, err?.details || err);
+                cleanupPaths(convertedPaths);
+                cleanupFiles(req.files);
+                return res.status(500).json({
+                    error: 'Не удалось конвертировать видео. Возможно файл повреждён.',
+                });
+            }
 
             if (!fs.existsSync(outputPath)) {
                 cleanupPaths(convertedPaths);
@@ -525,13 +680,21 @@ function readDB() {
     try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } 
     catch (e) { return { students: [], submissions: [] }; }
 }
-function writeDB(data) { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); }
+function writeDB(data) {
+    const tmpFile = `${DB_FILE}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
+    fs.renameSync(tmpFile, DB_FILE);
+}
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 БОТ ЗАПУЩЕН НА ПОРТУ ${PORT}`);
     if (!FFMPEG_AVAILABLE) {
         console.warn('⚠️  ffmpeg не найден: конвертация видео недоступна.');
     }
+    if (!FFPROBE_AVAILABLE) {
+        console.warn('⚠️  ffprobe не найден: проверка видео недоступна.');
+    }
+    console.log(`⚙️  Транскод: параллельность=${TRANSCODE_CONCURRENCY}, таймаут=${Math.round(TRANSCODE_TIMEOUT_MS / 60000)} мин, мин.длительность=${MIN_VIDEO_SECONDS} сек`);
     console.log(`---------------------------------------------------`);
     console.log(`1. Соберите фронтенд: npm run build`);
     console.log(`2. Создайте туннель:  npx localtunnel --port ${PORT}`);
